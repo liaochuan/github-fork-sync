@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GitHub Fork Sync</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f6f8fa; color: #1f2328; padding: 20px; min-height: 100vh; }
+h1 { margin-bottom: 20px; font-size: 24px; display: flex; align-items: center; gap: 10px; }
+h1 .icon { width: 28px; height: 28px; fill: #1f2328; }
+.toolbar { margin-bottom: 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+button { padding: 8px 16px; border: 1px solid #d0d7de; background: #fff; border-radius: 6px; cursor: pointer; font-size: 14px; transition: all 0.15s; }
+button:hover:not(:disabled) { background: #f3f4f6; border-color: #afb8c1; }
+button.primary { background: #1f883d; color: #fff; border-color: #1f883d; }
+button.primary:hover:not(:disabled) { background: #1a7f37; }
+button.danger { background: #cf222e; color: #fff; border-color: #cf222e; }
+button.danger:hover:not(:disabled) { background: #a40e26; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+select { padding: 8px 12px; border: 1px solid #d0d7de; border-radius: 6px; font-size: 14px; background: #fff; cursor: pointer; }
+select:focus { outline: 2px solid #0969da; outline-offset: -1px; }
+label { font-size: 14px; color: #656d76; }
+table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #d0d7de; font-size: 14px; }
+th { background: #f6f8fa; font-weight: 600; position: sticky; top: 0; }
+tbody tr:hover { background: #f6f8fa; }
+.badge { padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; white-space: nowrap; display: inline-block; }
+.badge.behind { background: #fff1cf; color: #7d4e00; }
+.badge.ahead { background: #dafbe1; color: #1a7f37; }
+.badge.diverged { background: #ffd8d3; color: #cf222e; }
+.badge.identical { background: #ddf4ff; color: #0969da; }
+.badge.error { background: #ffebe9; color: #cf222e; }
+.badge.loading { background: #eaeef2; color: #656d76; position: relative; overflow: hidden; }
+.badge.loading::after { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent); animation: shimmer 1.5s infinite; }
+.badge.refreshing { background: #eaeef2; color: #656d76; position: relative; overflow: hidden; }
+.badge.refreshing::after { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent); animation: shimmer 1.5s infinite; }
+@keyframes shimmer { 100% { left: 100%; } }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.loading-cell { animation: pulse 1.5s ease-in-out infinite; color: #656d76; }
+.diff-detail { margin: 12px 0; padding: 16px; background: #f6f8fa; border-radius: 8px; border: 1px solid #d0d7de; }
+.commit-list { margin-top: 8px; }
+.commit { padding: 8px 0; border-bottom: 1px solid #eaeef2; font-size: 13px; }
+.commit:last-child { border-bottom: none; }
+.commit .sha { font-family: monospace; color: #0969da; background: #ddf4ff; padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+.commit .meta { color: #656d76; font-size: 12px; margin-left: 8px; }
+.section-title { font-weight: 600; margin: 8px 0 4px; font-size: 13px; }
+.section-title.behind { color: #7d4e00; }
+.section-title.ahead { color: #1a7f37; }
+.loading-overlay { text-align: center; padding: 60px 20px; color: #656d76; }
+.loading-overlay .spinner { width: 40px; height: 40px; border: 3px solid #eaeef2; border-top-color: #0969da; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
+@keyframes spin { 100% { transform: rotate(360deg); } }
+.loading-overlay .text { font-size: 14px; }
+.error-bar { color: #cf222e; padding: 12px 16px; background: #ffebe9; border: 1px solid #ffcecb; border-radius: 6px; margin-bottom: 12px; font-size: 14px; }
+input[type="checkbox"] { cursor: pointer; width: 16px; height: 16px; }
+.stats { font-size: 13px; color: #656d76; margin-left: auto; }
+.stats .count { font-weight: 600; color: #1f2328; }
+.progress-bar { width: 100%; height: 8px; background: #eaeef2; border-radius: 4px; overflow: hidden; margin-top: 8px; }
+.progress-fill { height: 100%; background: linear-gradient(90deg, #1f883d, #2da44e); transition: width 0.3s ease; border-radius: 4px; }
+.progress-info { font-size: 13px; color: #656d76; margin-top: 6px; display: flex; justify-content: space-between; }
+.sync-log { margin-top: 12px; max-height: 300px; overflow-y: auto; padding: 12px; background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 8px; font-size: 13px; }
+.sync-log .log-entry { padding: 6px 8px; border-bottom: 1px solid #eaeef2; border-radius: 4px; display: flex; gap: 8px; align-items: baseline; }
+.sync-log .log-entry:last-child { border-bottom: none; }
+.sync-log .log-entry.success { background: #dafbe1; }
+.sync-log .log-entry.failed { background: #ffebe9; }
+.sync-log .log-entry .status-tag { font-weight: 600; font-size: 12px; padding: 1px 6px; border-radius: 4px; flex-shrink: 0; }
+.sync-log .log-entry.success .status-tag { background: #1f883d; color: #fff; }
+.sync-log .log-entry.failed .status-tag { background: #cf222e; color: #fff; }
+
+/* 通用弹窗 */
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(2px); animation: fadeIn 0.15s ease; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.modal { background: #fff; border-radius: 12px; padding: 24px; width: 90%; max-width: 480px; max-height: 80vh; overflow-y: auto; box-shadow: 0 8px 24px rgba(0,0,0,0.15); animation: slideUp 0.2s ease; }
+@keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.modal h2 { margin-bottom: 16px; font-size: 18px; display: flex; align-items: center; gap: 8px; }
+.modal .modal-body { font-size: 14px; color: #1f2328; line-height: 1.6; margin-bottom: 20px; word-break: break-word; }
+.modal .modal-body .detail { color: #656d76; font-size: 13px; margin-top: 8px; padding: 8px 12px; background: #f6f8fa; border-radius: 6px; border: 1px solid #d0d7de; }
+.modal .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.modal .modal-actions button { min-width: 80px; }
+.modal-icon { width: 22px; height: 22px; flex-shrink: 0; }
+.modal-icon.info { fill: #0969da; }
+.modal-icon.warning { fill: #9a6700; }
+.modal-icon.success { fill: #1f883d; }
+.modal-icon.error { fill: #cf222e; }
+
+/* 同步进度弹窗 */
+.sync-modal { max-width: 600px; }
+.sync-modal .close-btn { margin-top: 16px; width: 100%; padding: 10px; }
+
+/* 骨架屏 */
+.skeleton-row td { padding: 10px 12px; }
+.skeleton { display: inline-block; background: linear-gradient(90deg, #eaeef2 25%, #f6f8fa 50%, #eaeef2 75%); background-size: 200% 100%; animation: skeleton-pulse 1.5s infinite; border-radius: 4px; height: 16px; }
+@keyframes skeleton-pulse { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+.skeleton.w-80 { width: 80px; }
+.skeleton.w-120 { width: 120px; }
+.skeleton.w-60 { width: 60px; }
+.skeleton.w-40 { width: 40px; }
+.skeleton.w-100 { width: 100px; }
+
+/* 跳过仓库面板（右上角） */
+.skipped-panel { position: fixed; top: 20px; right: 20px; width: 320px; max-height: 70vh; z-index: 100; background: #fff; border: 1px solid #d0d7de; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); overflow: hidden; }
+.skipped-panel.collapsed .skipped-body { display: none; }
+.skipped-header { padding: 10px 14px; background: #fff8d6; border-bottom: 1px solid #d4a72c; cursor: pointer; display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 600; color: #7d4e00; }
+.skipped-header .icon { width: 16px; height: 16px; fill: #7d4e00; flex-shrink: 0; }
+.skipped-header .arrow { transition: transform 0.2s; }
+.skipped-panel.collapsed .skipped-header .arrow { transform: rotate(-90deg); }
+.skipped-header .title { display: flex; align-items: center; gap: 6px; }
+.skipped-header .count { background: #d4a72c; color: #fff; border-radius: 10px; padding: 1px 8px; font-size: 12px; }
+.skipped-header .close-x { width: 16px; height: 16px; fill: #7d4e00; flex-shrink: 0; cursor: pointer; padding: 2px; border-radius: 4px; transition: background 0.15s; }
+.skipped-header .close-x:hover { background: rgba(125, 78, 0, 0.15); }
+.skipped-header .right-group { display: flex; align-items: center; gap: 4px; }
+.skipped-body { max-height: calc(70vh - 44px); overflow-y: auto; }
+.skipped-item { padding: 8px 14px; border-bottom: 1px solid #eaeef2; font-size: 13px; }
+.skipped-item:last-child { border-bottom: none; }
+.skipped-item .name { font-weight: 500; color: #1f2328; word-break: break-all; }
+.skipped-item .reason { color: #656d76; font-size: 12px; margin-top: 2px; }
+
+/* 用户信息栏（顶部右侧） */
+.user-bar { display: flex; align-items: center; gap: 10px; margin-left: auto; padding: 4px 12px; background: #fff; border: 1px solid #d0d7de; border-radius: 8px; font-size: 14px; }
+.user-bar img { width: 28px; height: 28px; border-radius: 50%; }
+.user-bar .user-name { font-weight: 600; color: #1f2328; }
+.user-bar .user-name a { color: #1f2328; text-decoration: none; }
+.user-bar .user-name a:hover { color: #0969da; }
+.user-bar .logout-btn { padding: 4px 10px; font-size: 13px; border: 1px solid #d0d7de; background: #fff; border-radius: 6px; cursor: pointer; }
+.user-bar .logout-btn:hover { background: #f3f4f6; border-color: #afb8c1; }
+.header-row { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
+.header-row h1 { margin-bottom: 0; }
+
+/* 登录页面 */
+.login-page { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #f6f8fa; display: flex; align-items: center; justify-content: center; z-index: 2000; }
+.login-card { background: #fff; border: 1px solid #d0d7de; border-radius: 12px; padding: 40px; width: 90%; max-width: 440px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+.login-card .login-icon { width: 48px; height: 48px; fill: #1f2328; display: block; margin: 0 auto 16px; }
+.login-card h2 { text-align: center; font-size: 20px; margin-bottom: 8px; }
+.login-card .subtitle { text-align: center; color: #656d76; font-size: 14px; margin-bottom: 24px; }
+.login-card .form-group { margin-bottom: 16px; }
+.login-card label { display: block; font-size: 14px; font-weight: 600; color: #1f2328; margin-bottom: 6px; }
+.login-card input[type="password"] { width: 100%; padding: 10px 12px; border: 1px solid #d0d7de; border-radius: 6px; font-size: 14px; font-family: monospace; }
+.login-card input[type="password"]:focus { outline: 2px solid #0969da; outline-offset: -1px; }
+.login-card .login-btn { width: 100%; padding: 10px; margin-top: 8px; font-size: 14px; }
+.login-card .login-hint { margin-top: 16px; padding: 12px; background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 6px; font-size: 12px; color: #656d76; line-height: 1.6; }
+.login-card .login-hint a { color: #0969da; text-decoration: none; }
+.login-card .login-error { color: #cf222e; font-size: 13px; margin-top: 8px; padding: 8px 12px; background: #ffebe9; border: 1px solid #ffcecb; border-radius: 6px; display: none; }
+.login-card .login-error.show { display: block; }
+.login-card .login-loading { text-align: center; color: #656d76; font-size: 14px; display: none; }
+.login-card .login-loading.show { display: block; }
+.login-card .login-loading .spinner { width: 24px; height: 24px; border: 2px solid #eaeef2; border-top-color: #0969da; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 8px; }
+</style>
+</head>
+<body>
+
+<!-- 登录页面 -->
+<div id="login-page" class="login-page" style="display:none;">
+  <div class="login-card">
+    <svg class="login-icon" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+      <path d="M5 5.372v.878c0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75v-.878a2.25 2.25 0 1 1 1.5 0v.878a2.25 2.25 0 0 1-2.25 2.25h-1.5v2.128a2.251 2.251 0 1 1-1.5 0V8.5h-1.5A2.25 2.25 0 0 1 3.5 6.25v-.878a2.25 2.25 0 1 1 1.5 0ZM5 3.25a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Zm6.75.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm-3 8.75a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Z"/>
+    </svg>
+    <h2>GitHub Fork Sync</h2>
+    <div class="subtitle">请输入 GitHub Personal Access Token 登录</div>
+    <div class="form-group">
+      <label for="token-input">GitHub Token</label>
+      <input type="password" id="token-input" placeholder="ghp_xxxx 或 github_pat_xxxx" autocomplete="off">
+    </div>
+    <div id="login-error" class="login-error"></div>
+    <div id="login-loading" class="login-loading"><div class="spinner"></div>正在验证...</div>
+    <button class="primary login-btn" onclick="doLogin()" id="login-btn">登录</button>
+    <div class="login-hint">
+      Token 需具备 <code>repo</code> 权限。若同步含 <code>.github/workflows/</code> 的仓库，还需 <code>workflow</code> 权限。<br>
+      <a href="https://github.com/settings/tokens" target="_blank">前往 GitHub 创建 Token →</a><br>
+      <span style="color:#cf222e;">注意：Token 仅保存在服务端内存中，重启后需重新登录。</span>
+    </div>
+  </div>
+</div>
+
+<!-- 主界面 -->
+<div id="main-app" style="display:none;">
+<div class="header-row">
+  <h1>
+    <svg class="icon" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+      <path d="M5 5.372v.878c0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75v-.878a2.25 2.25 0 1 1 1.5 0v.878a2.25 2.25 0 0 1-2.25 2.25h-1.5v2.128a2.251 2.251 0 1 1-1.5 0V8.5h-1.5A2.25 2.25 0 0 1 3.5 6.25v-.878a2.25 2.25 0 1 1 1.5 0ZM5 3.25a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Zm6.75.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm-3 8.75a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Z"/>
+    </svg>
+    GitHub Fork Sync
+  </h1>
+  <div class="user-bar" id="user-bar" style="display:none;">
+    <img id="user-avatar" src="" alt="avatar">
+    <span class="user-name"><a id="user-link" href="#" target="_blank"><span id="user-login"></span></a></span>
+    <button class="logout-btn" id="logout-btn" onclick="doLogout()">登出</button>
+  </div>
+</div>
+<div class="toolbar">
+  <button onclick="refresh()" id="btn-refresh">刷新</button>
+  <button onclick="syncSelected()" class="primary" id="btn-sync">同步选中</button>
+  <label>状态筛选：</label>
+  <select id="status-filter" onchange="render()">
+    <option value="all">全部</option>
+    <option value="behind">落后</option>
+    <option value="ahead">超前</option>
+    <option value="diverged">分叉</option>
+    <option value="identical">同步</option>
+    <option value="error">错误</option>
+    <option value="loading">加载中</option>
+    <option value="refreshing">刷新中</option>
+  </select>
+  <span class="stats" id="stats"></span>
+</div>
+<div id="error" class="error-bar" style="display:none;"></div>
+<div id="content"><div class="loading-overlay"><div class="spinner"></div><div class="text">正在加载仓库列表...</div></div></div>
+
+<div id="skipped-panel" class="skipped-panel collapsed" style="display:none;">
+  <div class="skipped-header" onclick="toggleSkippedPanel()">
+    <span class="title">
+      <svg class="icon" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"/></svg>
+      <span>已跳过</span>
+      <span class="count" id="skipped-count">0</span>
+    </span>
+    <span class="right-group" onclick="event.stopPropagation()">
+      <svg class="icon arrow" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M12.78 5.22a.749.749 0 0 1 0 1.06l-4.25 4.25a.749.749 0 0 1-1.06 0L3.22 6.28a.749.749 0 1 1 1.06-1.06L8 8.939l3.72-3.719a.749.749 0 0 1 1.06 0Z"/></svg>
+      <svg class="icon close-x" onclick="dismissSkippedPanel()" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.06 1.06L9.06 8l3.22 3.22a.749.749 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.749.749 0 1 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"/></svg>
+    </span>
+  </div>
+  <div class="skipped-body" id="skipped-body"></div>
+</div>
+
+<div id="sync-modal" class="modal-overlay" style="display:none;">
+  <div class="modal sync-modal">
+    <h2>
+      <svg class="modal-icon info" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+        <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0ZM1.5 8a6.5 6.5 0 1 1 13 0 6.5 6.5 0 0 1-13 0Zm4.879-2.773 4.264 2.559a.25.25 0 0 1 0 .428l-4.264 2.559A.25.25 0 0 1 6 10.559V5.442a.25.25 0 0 1 .379-.215Z"/>
+      </svg>
+      同步进度
+    </h2>
+    <div class="progress-bar"><div class="progress-fill" id="sync-progress-fill" style="width:0%"></div></div>
+    <div class="progress-info">
+      <span id="sync-progress-info">准备中...</span>
+      <span id="sync-progress-pct">0%</span>
+    </div>
+    <div class="sync-log" id="sync-log"></div>
+    <button class="close-btn" onclick="closeSyncModal()" id="sync-close-btn">关闭</button>
+  </div>
+</div>
+
+<div id="dialog-container"></div>
+</div>
+
+<script>
+const STATUS_CN = {
+  behind: '落后',
+  ahead: '超前',
+  diverged: '分叉',
+  identical: '同步',
+  error: '错误',
+  loading: '加载中',
+  refreshing: '刷新中',
+};
+
+const ICONS = {
+  info: '<svg class="modal-icon info" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/></svg>',
+  warning: '<svg class="modal-icon warning" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"/></svg>',
+  success: '<svg class="modal-icon success" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm11.177-1.823a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L4.823 8.237a.75.75 0 0 1 1.06-1.06l2.844 2.843 3.782-3.783a.75.75 0 0 1 1.06 0Z"/></svg>',
+  error: '<svg class="modal-icon error" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm6.25-3.25v3.5a.75.75 0 0 0 1.5 0v-3.5a.75.75 0 0 0-1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"/></svg>',
+};
+
+let repos = [];
+let diffMap = {};
+let isStreaming = false;
+let skippedRepos = [];
+let skippedDismissed = false;
+let refreshingSet = new Set();
+let showSkipped = true;
+let userInfo = null;
+
+function statusCn(s) { return STATUS_CN[s] || s; }
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function badgeClass(status) { return 'badge ' + status; }
+
+function showError(msg) {
+  const el = document.getElementById('error');
+  el.textContent = '错误: ' + msg;
+  el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 5000);
+}
+
+/* ===== 认证逻辑 ===== */
+
+function showLoginPage() {
+  document.getElementById('login-page').style.display = 'flex';
+  document.getElementById('main-app').style.display = 'none';
+  document.getElementById('token-input').value = '';
+  document.getElementById('token-input').focus();
+}
+
+function showMainApp() {
+  document.getElementById('login-page').style.display = 'none';
+  document.getElementById('main-app').style.display = '';
+}
+
+function renderUserBar() {
+  const bar = document.getElementById('user-bar');
+  if (!userInfo) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  document.getElementById('user-avatar').src = userInfo.avatar_url || '';
+  document.getElementById('user-login').textContent = userInfo.login || '';
+  const link = document.getElementById('user-link');
+  if (userInfo.html_url) link.href = userInfo.html_url;
+  const logoutBtn = document.getElementById('logout-btn');
+  logoutBtn.style.display = userInfo.token_source === 'runtime' ? '' : 'none';
+}
+
+async function checkAuth() {
+  try {
+    const resp = await fetch('/api/auth/check');
+    const data = await resp.json();
+    if (data.authenticated) {
+      showMainApp();
+      await loadUser();
+      refresh();
+    } else {
+      showLoginPage();
+    }
+  } catch (e) {
+    showLoginPage();
+  }
+}
+
+async function loadUser() {
+  try {
+    const resp = await fetch('/api/user');
+    if (!resp.ok) return;
+    userInfo = await resp.json();
+    renderUserBar();
+  } catch (e) { /* ignore */ }
+}
+
+async function doLogin() {
+  const token = document.getElementById('token-input').value.trim();
+  const errEl = document.getElementById('login-error');
+  const loadingEl = document.getElementById('login-loading');
+  const btn = document.getElementById('login-btn');
+
+  if (!token) {
+    errEl.textContent = '请输入 Token';
+    errEl.classList.add('show');
+    return;
+  }
+
+  errEl.classList.remove('show');
+  loadingEl.classList.add('show');
+  btn.disabled = true;
+
+  try {
+    const resp = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    const data = await resp.json();
+    if (resp.ok && data.authenticated) {
+      userInfo = data.user;
+      showMainApp();
+      renderUserBar();
+      refresh();
+    } else {
+      errEl.textContent = data.detail || '登录失败';
+      errEl.classList.add('show');
+    }
+  } catch (e) {
+    errEl.textContent = '网络错误: ' + e.message;
+    errEl.classList.add('show');
+  } finally {
+    loadingEl.classList.remove('show');
+    btn.disabled = false;
+  }
+}
+
+async function doLogout() {
+  const ok = await confirmDialog('确认登出', '登出后需要重新输入 Token 才能继续使用。');
+  if (!ok) return;
+  try {
+    await fetch('/api/auth/logout', { method: 'POST' });
+  } catch (e) { /* ignore */ }
+  userInfo = null;
+  repos = [];
+  diffMap = {};
+  showLoginPage();
+}
+
+// 回车键登录
+document.addEventListener('DOMContentLoaded', () => {
+  const input = document.getElementById('token-input');
+  if (input) {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') doLogin();
+    });
+  }
+  checkAuth();
+});
+
+function getFilter() { return document.getElementById('status-filter').value; }
+
+function getRepoStatus(fullName) {
+  if (refreshingSet.has(fullName)) return 'refreshing';
+  return diffMap[fullName]?.status || 'loading';
+}
+function getRepoBehind(fullName) { return diffMap[fullName]?.behind_by ?? 0; }
+function getRepoAhead(fullName) { return diffMap[fullName]?.ahead_by ?? 0; }
+
+function filteredRepos() {
+  const f = getFilter();
+  if (f === 'all') return repos.map((r, i) => ({ r, i }));
+  return repos.map((r, i) => ({ r, i })).filter(({ r }) => getRepoStatus(r.full_name) === f);
+}
+
+function updateStats() {
+  const counts = {};
+  repos.forEach(r => {
+    const s = getRepoStatus(r.full_name);
+    counts[s] = (counts[s] || 0) + 1;
+  });
+  const el = document.getElementById('stats');
+  if (repos.length === 0) { el.textContent = ''; return; }
+  el.innerHTML = `共 <span class="count">${repos.length}</span> 个，` +
+    Object.entries(counts).map(([k, v]) => `${statusCn(k)} <span class="count">${v}</span>`).join('，');
+}
+
+function renderSkeletonRows(count) {
+  const rows = Array.from({ length: count }, () => `
+    <tr class="skeleton-row">
+      <td><input type="checkbox" disabled></td>
+      <td><span class="skeleton w-120"></span></td>
+      <td><span class="skeleton w-120"></span></td>
+      <td><span class="skeleton w-60"></span></td>
+      <td><span class="skeleton w-40"></span></td>
+      <td><span class="skeleton w-40"></span></td>
+      <td><span class="skeleton w-80"></span></td>
+    </tr>
+  `).join('');
+  document.getElementById('content').innerHTML = `
+    <table>
+      <thead><tr><th><input type="checkbox" id="select-all" disabled></th><th>仓库</th><th>上游</th><th>状态</th><th>落后</th><th>超前</th><th>操作</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function renderSkipped() {
+  const panel = document.getElementById('skipped-panel');
+  const body = document.getElementById('skipped-body');
+  const countEl = document.getElementById('skipped-count');
+  if (!showSkipped || skippedRepos.length === 0 || skippedDismissed) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = '';
+  countEl.textContent = skippedRepos.length;
+  body.innerHTML = skippedRepos.map(s => `
+    <div class="skipped-item">
+      <div class="name">${escapeHtml(s.full_name)}</div>
+      <div class="reason">${escapeHtml(s.reason)}</div>
+    </div>
+  `).join('');
+}
+
+function toggleSkippedPanel() {
+  document.getElementById('skipped-panel').classList.toggle('collapsed');
+}
+
+function dismissSkippedPanel() {
+  skippedDismissed = true;
+  document.getElementById('skipped-panel').style.display = 'none';
+}
+
+function render() {
+  updateStats();
+  const view = filteredRepos();
+  if (view.length === 0) {
+    document.getElementById('content').innerHTML = '<div class="loading-overlay"><div class="text">无匹配结果</div></div>';
+    return;
+  }
+
+  const html = `
+    <table>
+      <thead><tr><th><input type="checkbox" id="select-all" onchange="toggleAll(this)"></th><th>仓库</th><th>上游</th><th>状态</th><th>落后</th><th>超前</th><th>操作</th></tr></thead>
+      <tbody>
+        ${view.map(({ r, i }) => {
+          const status = getRepoStatus(r.full_name);
+          const behind = getRepoBehind(r.full_name);
+          const ahead = getRepoAhead(r.full_name);
+          const diffDisabled = status === 'identical' || status === 'error' || status === 'loading';
+          const syncDisabled = behind === 0 || status === 'loading';
+          const behindCell = status === 'loading' ? '<span class="loading-cell">...</span>' : behind;
+          const aheadCell = status === 'loading' ? '<span class="loading-cell">...</span>' : ahead;
+          const diff = diffMap[r.full_name];
+          const errorTitle = (status === 'error' && diff && diff.error_message) ? ` title="${escapeHtml(diff.error_message)}"` : '';
+          return `
+          <tr id="row-${i}">
+            <td><input type="checkbox" class="repo-check" value="${escapeHtml(r.full_name)}" ${behind > 0 ? '' : 'disabled'}></td>
+            <td><a href="${escapeHtml(r.html_url)}" target="_blank">${escapeHtml(r.full_name)}</a></td>
+            <td><a href="https://github.com/${escapeHtml(r.parent_full_name)}" target="_blank">${escapeHtml(r.parent_full_name)}</a></td>
+            <td><span class="${badgeClass(status)}" id="status-${i}"${errorTitle}>${statusCn(status)}</span></td>
+            <td id="behind-${i}">${behindCell}</td>
+            <td id="ahead-${i}">${aheadCell}</td>
+            <td>
+              <button onclick="showDiff(${i})" ${diffDisabled ? 'disabled' : ''}>查看差异</button>
+              <button onclick="syncOne('${escapeHtml(r.full_name)}')" ${syncDisabled ? 'disabled' : ''}>同步</button>
+            </td>
+          </tr>
+          <tr id="diff-${i}" style="display:none;">
+            <td colspan="7"><div class="diff-detail" id="diff-content-${i}">加载中...</div></td>
+          </tr>
+        `}).join('')}
+      </tbody>
+    </table>
+  `;
+  document.getElementById('content').innerHTML = html;
+}
+
+function updateRow(fullName) {
+  const diff = diffMap[fullName];
+  if (!diff) return;
+  if (!Array.isArray(repos)) return;
+  const index = repos.findIndex(r => r.full_name === fullName);
+  if (index < 0) return;
+  const statusEl = document.getElementById('status-' + index);
+  const behindEl = document.getElementById('behind-' + index);
+  const aheadEl = document.getElementById('ahead-' + index);
+  if (statusEl) {
+    statusEl.className = badgeClass(diff.status);
+    statusEl.textContent = statusCn(diff.status);
+    if (diff.status === 'error' && diff.error_message) {
+      statusEl.title = diff.error_message;
+    } else {
+      statusEl.removeAttribute('title');
+    }
+  }
+  if (behindEl) behindEl.textContent = diff.behind_by;
+  if (aheadEl) aheadEl.textContent = diff.ahead_by;
+  const row = document.getElementById('row-' + index);
+  if (row) {
+    const checkbox = row.querySelector('.repo-check');
+    const buttons = row.querySelectorAll('button');
+    if (checkbox) checkbox.disabled = diff.behind_by === 0;
+    if (buttons.length >= 2) {
+      buttons[0].disabled = diff.status === 'identical' || diff.status === 'error';
+      buttons[1].disabled = diff.behind_by === 0;
+    }
+  }
+  updateStats();
+}
+
+async function refresh() {
+  if (isStreaming) return;
+  isStreaming = true;
+  document.getElementById('btn-refresh').disabled = true;
+  document.getElementById('btn-sync').disabled = true;
+  document.getElementById('content').innerHTML = '<div class="loading-overlay"><div class="spinner"></div><div class="text">正在加载仓库列表...</div></div>';
+  repos = [];
+  diffMap = {};
+  skippedDismissed = false;
+
+  try {
+    const resp = await fetch('/api/repos/basic');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    repos = Array.isArray(data) ? data : (data.forks || []);
+    skippedRepos = Array.isArray(data) ? [] : (data.skipped || []);
+    showSkipped = Array.isArray(data) ? true : (data.show_skipped !== false);
+    renderSkipped();
+    render();
+
+    const es = new EventSource('/api/repos/stream');
+    es.addEventListener('diff', (e) => {
+      const d = JSON.parse(e.data);
+      diffMap[d.repo.full_name] = d;
+      updateRow(d.repo.full_name);
+    });
+    es.addEventListener('done', () => {
+      es.close();
+      isStreaming = false;
+      document.getElementById('btn-refresh').disabled = false;
+      document.getElementById('btn-sync').disabled = false;
+    });
+    es.onerror = () => {
+      es.close();
+      isStreaming = false;
+      document.getElementById('btn-refresh').disabled = false;
+      document.getElementById('btn-sync').disabled = false;
+    };
+  } catch (e) {
+    showError(e.message);
+    isStreaming = false;
+    document.getElementById('btn-refresh').disabled = false;
+    document.getElementById('btn-sync').disabled = false;
+  }
+}
+
+function toggleAll(checkbox) {
+  document.querySelectorAll('.repo-check').forEach(cb => { if (!cb.disabled) cb.checked = checkbox.checked; });
+}
+
+async function showDiff(index) {
+  const row = document.getElementById('diff-' + index);
+  const content = document.getElementById('diff-content-' + index);
+  if (row.style.display === 'none') {
+    row.style.display = '';
+    const r = repos[index];
+    const cached = diffMap[r.full_name];
+    if (cached && (cached.behind_commits.length || cached.ahead_commits.length)) {
+      renderDiffContent(content, cached);
+      return;
+    }
+    content.innerHTML = '<div class="loading-overlay"><div class="spinner"></div><div class="text">加载差异...</div></div>';
+    try {
+      const resp = await fetch(`/api/repos/${r.full_name}/diff`);
+      const d = await resp.json();
+      diffMap[r.full_name] = d;
+      renderDiffContent(content, d);
+    } catch (e) {
+      content.innerHTML = '<div class="error-bar">加载失败: ' + escapeHtml(e.message) + '</div>';
+    }
+  } else {
+    row.style.display = 'none';
+  }
+}
+
+function renderDiffContent(content, d) {
+  content.innerHTML = `
+    <div class="section-title behind">落后的 ${d.behind_by} 个 commit（sync 后会合并进来）</div>
+    <div class="commit-list">
+      ${d.behind_commits.length ? d.behind_commits.map(c => `
+        <div class="commit"><span class="sha">${escapeHtml(c.sha.substring(0,7))}</span> ${escapeHtml(c.message)}<span class="meta">${escapeHtml(c.date.substring(0,10))} · ${escapeHtml(c.author)}</span></div>
+      `).join('') : '<div style="color:#656d76;padding:4px 0;">（无）</div>'}
+    </div>
+    <div class="section-title ahead">超前的 ${d.ahead_by} 个 commit（fork 独有）</div>
+    <div class="commit-list">
+      ${d.ahead_commits.length ? d.ahead_commits.map(c => `
+        <div class="commit"><span class="sha">${escapeHtml(c.sha.substring(0,7))}</span> ${escapeHtml(c.message)}<span class="meta">${escapeHtml(c.date.substring(0,10))} · ${escapeHtml(c.author)}</span></div>
+      `).join('') : '<div style="color:#656d76;padding:4px 0;">（无）</div>'}
+    </div>
+  `;
+}
+
+/* ===== 自定义弹窗系统 ===== */
+
+function showDialog({ icon = 'info', title, body, detail, actions }) {
+  return new Promise((resolve) => {
+    const container = document.getElementById('dialog-container');
+    const id = 'dlg-' + Date.now();
+    const actionsHtml = actions.map((a, idx) => {
+      const cls = a.danger ? 'danger' : (a.primary ? 'primary' : '');
+      return `<button class="${cls}" data-idx="${idx}">${escapeHtml(a.label)}</button>`;
+    }).join('');
+
+    container.insertAdjacentHTML('beforeend', `
+      <div class="modal-overlay" id="${id}">
+        <div class="modal">
+          <h2>${ICONS[icon] || ''} ${escapeHtml(title)}</h2>
+          <div class="modal-body">${body || ''}${detail ? `<div class="detail">${escapeHtml(detail)}</div>` : ''}</div>
+          <div class="modal-actions">${actionsHtml}</div>
+        </div>
+      </div>
+    `);
+
+    const overlay = document.getElementById(id);
+    overlay.querySelectorAll('[data-idx]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.idx);
+        overlay.remove();
+        resolve(actions[idx].value);
+      });
+    });
+  });
+}
+
+async function confirmDialog(title, body, detail) {
+  return showDialog({
+    icon: 'warning', title, body, detail,
+    actions: [
+      { label: '取消', value: false },
+      { label: '确认', value: true, primary: true },
+    ],
+  });
+}
+
+async function infoDialog(title, body, detail, icon = 'info') {
+  return showDialog({
+    icon, title, body, detail,
+    actions: [{ label: '确定', value: true, primary: true }],
+  });
+}
+
+async function refreshRepoDiff(fullName) {
+  try {
+    const resp = await fetch(`/api/repos/${fullName}/diff`);
+    if (!resp.ok) return;
+    const d = await resp.json();
+    diffMap[fullName] = d;
+    refreshingSet.delete(fullName);
+    updateRow(fullName);
+    updateStats();
+  } catch (e) { /* ignore */ }
+}
+
+function collapseDiffRow(fullName) {
+  if (!Array.isArray(repos)) return;
+  const index = repos.findIndex(r => r.full_name === fullName);
+  if (index < 0) return;
+  const row = document.getElementById('diff-' + index);
+  if (row && row.style.display !== 'none') {
+    row.style.display = 'none';
+  }
+}
+
+function setRowRefreshing(fullName) {
+  refreshingSet.add(fullName);
+  if (!Array.isArray(repos)) return;
+  const index = repos.findIndex(r => r.full_name === fullName);
+  if (index < 0) return;
+  const statusEl = document.getElementById('status-' + index);
+  const behindEl = document.getElementById('behind-' + index);
+  const aheadEl = document.getElementById('ahead-' + index);
+  if (statusEl) { statusEl.className = 'badge refreshing'; statusEl.textContent = '刷新中'; }
+  if (behindEl) behindEl.innerHTML = '<span class="loading-cell">...</span>';
+  if (aheadEl) aheadEl.innerHTML = '<span class="loading-cell">...</span>';
+  const row = document.getElementById('row-' + index);
+  if (row) {
+    const checkbox = row.querySelector('.repo-check');
+    const buttons = row.querySelectorAll('button');
+    if (checkbox) checkbox.disabled = true;
+    if (buttons.length >= 2) { buttons[0].disabled = true; buttons[1].disabled = true; }
+  }
+  updateStats();
+}
+
+async function syncOne(fullName) {
+  const ok = await confirmDialog('确认同步', `确认同步 <strong>${escapeHtml(fullName)}</strong>？`);
+  if (!ok) return;
+  openSyncModal(1);
+  try {
+    const resp = await fetch(`/api/repos/${fullName}/sync`, { method: 'POST' });
+    const result = await resp.json();
+    addSyncLogEntry(result);
+    updateSyncProgress(1, 1);
+    if (result.success) {
+      collapseDiffRow(fullName);
+      setRowRefreshing(fullName);
+      refreshRepoDiff(fullName);
+    }
+  } catch (e) {
+    showError(e.message);
+  }
+  finishSync();
+}
+
+async function syncSelected() {
+  const selected = Array.from(document.querySelectorAll('.repo-check:checked')).map(cb => cb.value);
+  if (selected.length === 0) {
+    await infoDialog('提示', '请先选择要同步的仓库');
+    return;
+  }
+  const ok = await confirmDialog('确认同步', `确认同步选中的 <strong>${selected.length}</strong> 个仓库？`);
+  if (!ok) return;
+
+  openSyncModal(selected.length);
+  const syncedRepos = [];
+  try {
+    const resp = await fetch('/api/sync-stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repos: selected }),
+    });
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+      let eventType = '';
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.slice(7);
+        } else if (line.startsWith('data: ') && eventType) {
+          const data = JSON.parse(line.slice(6));
+          if (eventType === 'progress') {
+            addSyncLogEntry(data.result);
+            updateSyncProgress(data.current, data.total);
+            if (data.result.success) {
+              collapseDiffRow(data.result.repo_full_name);
+              setRowRefreshing(data.result.repo_full_name);
+              syncedRepos.push(data.result.repo_full_name);
+            }
+          }
+          eventType = '';
+        }
+      }
+    }
+  } catch (e) {
+    showError(e.message);
+  }
+  finishSync();
+  for (const name of syncedRepos) {
+    refreshRepoDiff(name);
+  }
+}
+
+function openSyncModal(total) {
+  const modal = document.getElementById('sync-modal');
+  modal.style.display = 'flex';
+  document.getElementById('sync-close-btn').disabled = true;
+  document.getElementById('sync-progress-fill').style.width = '0%';
+  document.getElementById('sync-progress-info').textContent = `0 / ${total}`;
+  document.getElementById('sync-progress-pct').textContent = '0%';
+  document.getElementById('sync-log').innerHTML = '';
+}
+
+function updateSyncProgress(current, total) {
+  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+  document.getElementById('sync-progress-fill').style.width = pct + '%';
+  document.getElementById('sync-progress-info').textContent = `${current} / ${total}`;
+  document.getElementById('sync-progress-pct').textContent = pct + '%';
+}
+
+function addSyncLogEntry(result) {
+  const log = document.getElementById('sync-log');
+  const entry = document.createElement('div');
+  entry.className = 'log-entry ' + (result.success ? 'success' : 'failed');
+  entry.setAttribute('data-repo', result.repo_full_name);
+  const statusText = result.success ? '成功' : '失败';
+  entry.innerHTML = `<span class="status-tag">${statusText}</span><span>${escapeHtml(result.repo_full_name)}: ${escapeHtml(result.message)}</span>`;
+  log.appendChild(entry);
+  log.scrollTop = log.scrollHeight;
+}
+
+function finishSync() {
+  document.getElementById('sync-close-btn').disabled = false;
+}
+
+function closeSyncModal() {
+  document.getElementById('sync-modal').style.display = 'none';
+}
+</script>
+</body>
+</html>
