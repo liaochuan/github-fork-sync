@@ -167,11 +167,11 @@ def web(
         console.print(f"[green]Starting web server at {url}[/green] (no token, login page will be shown)")
     webbrowser.open(url)
 
-    import uvicorn
     from gfs.web.app import create_app
+    from gfs.web.server import run_server
 
     web_app = create_app(settings)
-    uvicorn.run(web_app, host="127.0.0.1", port=port, log_level="info")
+    run_server(web_app, "127.0.0.1", port)
 
 
 if __name__ == "__main__":
