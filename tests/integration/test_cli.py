@@ -12,7 +12,7 @@ def _fork_json(name="me/project-a", parent="original/project-a"):
         "id": 1,
         "full_name": name,
         "fork": True,
-        "default_branch": "main",
+        "default_branch": "mine",
         "html_url": f"https://github.com/{name}",
         "parent": {"full_name": parent, "default_branch": "main"},
     }
@@ -88,6 +88,8 @@ def test_diff_command(monkeypatch):
     result = runner.invoke(app, ["diff", "me/project-a"])
     assert result.exit_code == 0
     assert "behind" in result.stdout.lower()
+    assert "compare branch" in result.stdout.lower()
+    assert "compare branch: main" in result.stdout.lower()
     assert "feat: upstream change" in result.stdout
 
 

@@ -18,9 +18,9 @@
 - **已跳过仓库展示**：因 HTTP 451 等原因无法获取详情的 fork 在页面右上角面板展示，含跳过原因（可通过配置关闭或点击关闭按钮临时隐藏，刷新后恢复）
 - **刷新中状态**：同步成功后对应行显示"刷新中"样式（shimmer 动画 + 按钮禁用），后台刷新完成后自动恢复
 - **状态筛选**：Web 界面支持下拉筛选落后/超前/分叉/同步/错误/刷新中等状态
-- **错误提示**：error 状态的仓库，鼠标悬停在"错误"徽章上会显示具体错误信息（如"无共同祖先，无法与上游比较"）
-- **422 自动重试**：同步时若分支名不匹配，自动用上游默认分支名重试；解析 GitHub 422 响应体展示真实错误（如 token 缺少 `workflow` scope）
-- **错误处理**：针对 403（权限不足）、404（仓库不存在/无共同祖先）、409（冲突）、422（分支不匹配/workflow scope）等提供清晰错误提示
+- **错误提示**：error 状态的仓库，鼠标悬停在"错误"徽章上会显示具体错误信息（如"无法对比：上游默认分支与 fork 同名分支 'main' 无共同祖先，或 fork 中不存在该分支"）
+- **按上游默认分支同名同步**：对比与同步都以「上游默认分支名」为准，取 fork 中的同名分支（如 `upstream:main...fork:main`）；fork 自己的默认分支（例如个人主分支）不参与对比和同步
+- **错误处理**：针对 403（权限不足）、404（仓库不存在/同名分支缺失/无共同祖先）、409（冲突）、422（同名分支不存在/workflow scope）等提供清晰错误提示
 - **自动重试**：HTTP 客户端内置网络错误重试机制
 - **网络代理**：支持 HTTP/HTTPS/SOCKS5 代理，优先级 `config.yaml` > `HTTPS_PROXY` > `HTTP_PROXY`
 - **Docker 部署**：提供 Dockerfile，支持容器化构建部署
@@ -28,11 +28,13 @@
 ## 工作原理
 
 1. **发现 fork**：调用 `GET /user/repos` 获取当前用户所有仓库，过滤出 `fork=true` 的仓库。由于该端点不返回 `parent`（上游）字段，对每个 fork 额外调用 `GET /repos/{owner}/{repo}` 详情端点补全上游信息。若详情获取失败（如 HTTP 451 法律限制），则跳过该仓库并记录到 skipped 列表（可在 Web 界面右上角面板查看）
-2. **差异对比**：对每个 fork 调用 `GET /repos/{owner}/{repo}/compare/{base}...{head}`：
-   - 正向调用（`upstream:branch...fork:branch`）获取 fork 超前的 commit（`ahead_commits`）
-   - 当 `behind_by > 0` 时反向调用（`fork:branch...upstream:branch`）获取落后的 commit（`behind_commits`）
-   - 若无共同祖先（HTTP 404），返回 `status="error"`，同步时自动跳过
-3. **执行同步**：对落后的 fork 调用 `POST /repos/{owner}/{repo}/merge-upstream`，通过 GitHub 的 merge-upstream 机制将上游变更合并到 fork。若返回 422 且 fork 与上游默认分支名不同，自动用上游默认分支名重试
+2. **差异对比**：对比名统一取「上游默认分支名」，fork 中取同名分支（默认分支被改成个人分支时依然对比 `main`）。对每个 fork 调用 `GET /repos/{owner}/{repo}/compare/{base}...{head}`：
+   - 正向调用（`upstream:main...fork:main`）获取 fork 超前的 commit（`ahead_commits`）
+   - 当 `behind_by > 0` 时反向调用（`fork:main...upstream:main`）获取落后的 commit（`behind_commits`）
+   - 若无共同祖先或 fork 缺少该同名分支（HTTP 404），返回 `status="error"`，同步时自动跳过
+3. **执行同步**：对落后的 fork 调用 `POST /repos/{owner}/{repo}/merge-upstream`，body 为 `{"branch": "main"}`（上游默认分支名），GitHub 会把上游同名分支合并进 fork 同名分支。fork 缺少该分支时返回 422，直接展示 GitHub 的错误信息，不会回退到 fork 默认分支
+
+> **个人主分支场景**：如果你把 fork 的默认分支改成自建的个人分支（例如 `mine`），请保留一个与上游默认分支同名的分支（例如 `main`）。gfs 只对比和同步这个同名分支，个人分支不会被上游内容覆盖；fork 缺少同名分支时该仓库会显示为 error，直到你手动创建该分支。
 
 ## 安装
 
@@ -250,7 +252,7 @@ proxy: socks5://127.0.0.1:1080     # SOCKS5 代理
 gfs list
 ```
 
-输出表格展示所有 fork 的仓库名、上游、默认分支和 URL。
+输出表格展示所有 fork 的仓库名、上游、默认分支（fork 自己的默认分支，可能是个人的主分支）和 URL。
 
 ```bash
 gfs list --json
@@ -358,7 +360,7 @@ Web 界面提供可视化的 fork 管理体验：
 - **SSE 流式加载**：先即时渲染仓库列表（状态显示"加载中"），再通过 Server-Sent Events 逐个推送 diff 结果，避免长时间空白等待
 - **仓库列表**：表格展示所有 fork 的状态、落后/超前数量，仓库名和上游均为可点击链接
 - **状态徽章**：颜色区分 `behind`（落后-黄）、`ahead`（超前-绿）、`diverged`（分叉-红）、`identical`（同步-蓝）、`error`（错误-红）、`loading`（加载中-灰）、`refreshing`（刷新中-灰）
-- **错误提示**：error 状态的仓库，鼠标悬停在"错误"徽章上会显示具体错误信息（如"无共同祖先，无法与上游比较"）
+- **错误提示**：error 状态的仓库，鼠标悬停在"错误"徽章上会显示具体错误信息（如"无法对比：上游默认分支与 fork 同名分支 'main' 无共同祖先，或 fork 中不存在该分支"）
 - **状态筛选**：下拉框筛选指定状态的仓库（全部/落后/超前/分叉/同步/错误/加载中/刷新中）
 - **查看差异**：点击"查看差异"展开行，显示落后和超前的 commit 详情（sha 徽章 + 描述 + 作者 + 日期）
 - **单仓同步**：点击"同步"按钮同步单个 fork（自定义确认弹窗）
@@ -446,9 +448,9 @@ curl -X POST http://127.0.0.1:8000/api/auth/logout
 | HTTP 状态码 | 含义 | 建议 |
 |------------|------|------|
 | 403 | 权限不足 | Token 需具备 `repo` 权限 |
-| 404 | 仓库不存在或非 fork | 检查仓库名称 |
+| 404 | 仓库不存在、fork 缺少与上游默认分支同名的分支，或与上游无共同祖先 | 检查仓库名与分支名；必要时手动 `git merge upstream/main` 后推送 |
 | 409 | 合并冲突 | fork 已分叉，需本地解决冲突 |
-| 422 | 分支不匹配或 token 缺少 `workflow` scope | 检查分支名；若上游 commit 含 `.github/workflows/` 修改，需在 token 设置中勾选 `workflow` scope |
+| 422 | 同名分支不存在或 token 缺少 `workflow` scope | 先在 fork 中创建与上游默认分支同名的分支；若上游 commit 含 `.github/workflows/` 修改，需在 token 设置中勾选 `workflow` scope |
 
 > **422 常见场景**：当上游 commit 包含 `.github/workflows/` 目录下的文件修改时，GitHub 要求 token 具备 `workflow` scope 才能同步。错误响应会解析 GitHub 返回的真实 message（如 `Validation failed: Could not synchronize: The token used does not have workflow access.`），帮助快速定位原因。
 
@@ -470,8 +472,8 @@ github-fork-sync/
 │   ├── github/
 │   │   ├── client.py         # GitHub HTTP 客户端（分页、重试、代理）
 │   │   ├── repos.py          # fork 仓库发现（含 skipped 收集）
-│   │   ├── compare.py        # 差异对比（含 404 无共同祖先容错）
-│   │   └── sync.py           # 同步执行（含 422 重试 + 真实错误解析）
+│   │   ├── compare.py        # 差异对比（按上游默认分支同名对比，含 404 容错）
+│   │   └── sync.py           # 同步执行（单分支同步 + 真实错误解析）
 │   └── config.py             # 配置加载（.env + config.yaml，含 show_skipped）
 ├── tests/
 │   ├── unit/                 # 单元测试

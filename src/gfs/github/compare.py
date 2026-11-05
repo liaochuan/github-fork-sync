@@ -9,8 +9,10 @@ logger = logging.getLogger(__name__)
 
 
 def compare_fork(client: GitHubClient, repo: RepoInfo) -> DiffResult:
-    base = f"{repo.parent_full_name.split('/')[0]}:{repo.parent_default_branch}"
-    head = repo.default_branch
+    # 以「上游默认分支名」作为共享分支名，在 fork 中取同名分支
+    branch = repo.parent_default_branch
+    base = f"{repo.parent_full_name.split('/')[0]}:{branch}"
+    head = branch
 
     try:
         forward = client.get(
@@ -19,8 +21,9 @@ def compare_fork(client: GitHubClient, repo: RepoInfo) -> DiffResult:
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 404:
             logger.warning(
-                "compare %s: no common ancestor with upstream, skipping",
+                "compare %s: branch '%s' missing in fork or no common ancestor",
                 repo.full_name,
+                branch,
             )
             return DiffResult(
                 repo=repo,
@@ -29,7 +32,10 @@ def compare_fork(client: GitHubClient, repo: RepoInfo) -> DiffResult:
                 ahead_by=0,
                 behind_commits=[],
                 ahead_commits=[],
-                error_message="无共同祖先，无法与上游比较",
+                error_message=(
+                    f"无法对比：上游默认分支与 fork 同名分支 '{branch}' "
+                    "无共同祖先，或 fork 中不存在该分支"
+                ),
             )
         raise
 

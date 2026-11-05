@@ -83,6 +83,7 @@ def diff(
 
     console.print(f"[bold]repo:[/bold] {result.repo.full_name} (default: {result.repo.default_branch})")
     console.print(f"[bold]upstream:[/bold] {result.repo.parent_full_name} (default: {result.repo.parent_default_branch})")
+    console.print(f"[bold]compare branch:[/bold] {result.repo.parent_default_branch}")
     console.print(
         f"[bold]status:[/bold] {result.status}  | behind: {result.behind_by}  | ahead: {result.ahead_by}\n"
     )

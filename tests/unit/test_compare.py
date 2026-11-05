@@ -16,7 +16,7 @@ def client():
 def repo():
     return RepoInfo(
         full_name="me/project-a",
-        default_branch="main",
+        default_branch="mine",
         parent_full_name="original/project-a",
         parent_default_branch="main",
         html_url="https://github.com/me/project-a",
@@ -186,4 +186,4 @@ def test_compare_no_common_ancestor(client, repo):
     assert result.ahead_by == 0
     assert result.behind_commits == []
     assert result.ahead_commits == []
-    assert result.error_message == "无共同祖先，无法与上游比较"
+    assert result.error_message == "无法对比：上游默认分支与 fork 同名分支 'main' 无共同祖先，或 fork 中不存在该分支"

@@ -16,7 +16,7 @@ def client():
 def repo():
     return RepoInfo(
         full_name="me/project-a",
-        default_branch="main",
+        default_branch="mine",
         parent_full_name="original/project-a",
         parent_default_branch="main",
         html_url="https://github.com/me/project-a",
@@ -25,7 +25,7 @@ def repo():
 
 @respx.mock
 def test_sync_success(client, repo):
-    respx.post(
+    route = respx.post(
         "https://api.github.com/repos/me/project-a/merge-upstream"
     ).mock(
         return_value=httpx.Response(
@@ -43,6 +43,8 @@ def test_sync_success(client, repo):
     assert result.success is True
     assert result.merge_type == "merge"
     assert result.error_code is None
+    # 同步目标是上游默认分支名，不是 fork 的个人默认分支
+    assert route.calls.last.request.content == b'{"branch":"main"}'
 
 
 @respx.mock
@@ -92,52 +94,29 @@ def test_sync_not_found(client, repo):
 
 
 @respx.mock
-def test_sync_422_retry_with_parent_branch(client):
-    """422 时应使用上游默认分支名重试。"""
-    repo = RepoInfo(
-        full_name="me/project-a",
-        default_branch="master",
-        parent_full_name="original/project-a",
-        parent_default_branch="main",
-        html_url="https://github.com/me/project-a",
-    )
+def test_sync_422_does_not_retry_with_fork_default(client, repo):
+    """422 时不得改用 fork 默认分支重试，只发一次请求。"""
     route = respx.post(
         "https://api.github.com/repos/me/project-a/merge-upstream"
     )
     route.mock(
-        side_effect=[
-            httpx.Response(422, json={"message": "Branch mismatch"}),
-            httpx.Response(
-                200,
-                json={"merge_type": "merge", "commit_message": "ok"},
-            ),
-        ]
-    )
-    result = sync_fork(client, repo)
-    assert result.success is True
-    assert route.calls.last.request.content == b'{"branch":"main"}'
-
-
-@respx.mock
-def test_sync_422_no_retry_when_same_branch(client, repo):
-    """fork 与上游分支名相同时 422 不重试，返回 GitHub 真实错误信息。"""
-    respx.post(
-        "https://api.github.com/repos/me/project-a/merge-upstream"
-    ).mock(
-        return_value=httpx.Response(422, json={"message": "refusing to allow a Personal Access Token to create or update workflow without workflow scope"})
+        return_value=httpx.Response(
+            422, json={"message": "Branch main not found"}
+        )
     )
     result = sync_fork(client, repo)
     assert result.success is False
     assert result.error_code == "422"
-    assert "workflow" in result.message.lower()
+    assert result.message == "Branch main not found"
+    assert route.call_count == 1
 
 
 @respx.mock
-def test_sync_422_retry_both_fail(client):
-    """两次重试都 422 应返回最后一次的 GitHub 错误信息。"""
+def test_sync_422_passthrough_when_branch_names_match(client):
+    """fork 与上游分支名相同时 422 不重试，直接返回 GitHub 真实错误信息。"""
     repo = RepoInfo(
         full_name="me/project-a",
-        default_branch="master",
+        default_branch="main",
         parent_full_name="original/project-a",
         parent_default_branch="main",
         html_url="https://github.com/me/project-a",

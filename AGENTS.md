@@ -49,4 +49,4 @@ gfs list --config config.yaml
 
 - 单元/集成测试用 `respx` mock `https://api.github.com`；不要发真实 GitHub 请求。
 - CLI 测试通过 `monkeypatch.setenv("GITHUB_TOKEN", ...)` 提供 token；Web 测试用 `create_app(Settings(...))` + `TestClient`。
-- 修改同步错误码、422 分支回退或 include/exclude 过滤时，同步更新 `tests/unit/test_sync.py`、`tests/unit/test_config.py` 和 `tests/integration/test_web.py`。
+- 修改同步错误码、同步目标分支（上游默认分支同名）或 include/exclude 过滤时，同步更新 `tests/unit/test_sync.py`、`tests/unit/test_config.py` 和 `tests/integration/test_web.py`。
